@@ -21,14 +21,14 @@
 | 路径 | 职责 | 变更 | 状态 | 验证 |
 |---|---|---|---|---|
 | `deploy/{compose.yaml,stock.conf.template,README.md}` | Docker 服务器配置、OpenResty 模板、部署手册 | 新增 | 已完成 | Compose、OpenResty 配置及 HTTPS 和 API 通过 |
-| `README.md`、`docs/FILE_MAP.md`、`docs/tasks/README.md`、本记录 | 入口与验收记录 | 修改/新增 | 待验证 | 链接与实际目录一致 |
+| `README.md`、`docs/FILE_MAP.md`、`docs/tasks/README.md`、本记录 | 入口与验收记录 | 修改/新增 | 已完成 | 链接与实际目录一致 |
 | `docs/tasks/T20261117-01-inventory.md` | 公开发布时调整附件引用 | 修改 | 已完成 | 保留原需求依据，使用聊天附件名称定位 |
 | 目标服务器的应用目录、OpenResty 站点目录、MySQL 独立库 | 运行、代理配置、持久化 | 新增 | 已完成 | HTTPS 登录、库存读写和已有站点响应复核通过 |
-| GitHub 公开仓库 | 源码和部署模板 | 新增 | 待验证 | 公开读权限和提交哈希 |
+| GitHub 公开仓库 | 源码和部署模板 | 新增 | 已完成 | `main` 可公开读取，首次发布提交 `98c1f75` |
 
 ## 验证结果与未解决事项
 
 - 远程 SSH、已有 Docker Compose、MySQL 和 OpenResty 已核实可用。权威 DNS 返回目标 IPv4，已有通配证书覆盖所选二级域名。
 - 线上匿名访问返回 401。登录后 Vue 页面、静态资源和 API 正常。使用真实 MySQL 验证新增商品及仓库、入库、结存和出库报价，清理了测试记录。
 - OpenResty 配置校验与重载通过。已安装单域名 Let's Encrypt 证书，有效期至 2027-02-15，续期后会检查配置并自动重载。
-- GitHub 发布等待验收。
+- GitHub 仓库 `licat2023/stock` 已发布，默认分支为 `main`，可见性为 Public。公开文件清单已核对，凭据和构建产物由本机或服务器独立保存。
