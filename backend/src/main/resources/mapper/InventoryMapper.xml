@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Implements master-data, balance and chronological inventory queries. -->
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.stock.InventoryMapper">
+    <select id="commodities" resultType="com.example.stock.InventoryModels$Commodity">
+        SELECT id, name, spec
+        FROM commodity
+        WHERE is_deleted = FALSE
+        ORDER BY name, id
+    </select>
+    <select id="lockCommodity" resultType="java.lang.Long">
+        SELECT id FROM commodity WHERE id = #{id} AND is_deleted = FALSE FOR UPDATE
+    </select>
+    <insert id="insertCommodity" useGeneratedKeys="true" keyProperty="generated.value">
+        INSERT INTO commodity (name, spec) VALUES (#{input.name}, #{input.spec})
+    </insert>
+    <update id="updateCommodity">
+        UPDATE commodity SET name = #{input.name}, spec = #{input.spec} WHERE id = #{id}
+    </update>
+    <select id="commodityHasDocuments" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM stock_in WHERE commodity_id = #{id})
+            OR EXISTS (SELECT 1 FROM stock_out WHERE commodity_id = #{id})
+    </select>
+    <update id="deactivateCommodity">
+        UPDATE commodity SET is_deleted = TRUE WHERE id = #{id}
+    </update>
+
+    <select id="warehouses" resultType="com.example.stock.InventoryModels$Warehouse">
+        SELECT id, name, address
+        FROM warehouse
+        WHERE is_deleted = FALSE
+        ORDER BY name, id
+    </select>
+    <select id="lockWarehouse" resultType="java.lang.Long">
+        SELECT id FROM warehouse WHERE id = #{id} AND is_deleted = FALSE FOR UPDATE
+    </select>
+    <insert id="insertWarehouse" useGeneratedKeys="true" keyProperty="generated.value">
+        INSERT INTO warehouse (name, address) VALUES (#{input.name}, #{input.address})
+    </insert>
+    <update id="updateWarehouse">
+        UPDATE warehouse SET name = #{input.name}, address = #{input.address} WHERE id = #{id}
+    </update>
+    <select id="warehouseHasDocuments" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM stock_in WHERE warehouse_id = #{id})
+            OR EXISTS (SELECT 1 FROM stock_out WHERE warehouse_id = #{id})
+    </select>
+    <update id="deactivateWarehouse">
+        UPDATE warehouse SET is_deleted = TRUE WHERE id = #{id}
+    </update>
+
+    <select id="stocks" resultType="com.example.stock.InventoryModels$Stock">
+        SELECT s.commodity_id, c.name AS commodity_name, s.warehouse_id, w.name AS warehouse_name,
+               s.quantity, s.unit_price, s.amount
+        FROM stock s
+        JOIN commodity c ON c.id = s.commodity_id
+        JOIN warehouse w ON w.id = s.warehouse_id
+        ORDER BY c.name, w.name, c.id, w.id
+    </select>
+    <select id="balance" resultType="com.example.stock.InventoryModels$Balance">
+        SELECT quantity, unit_price, amount
+        FROM stock
+        WHERE commodity_id = #{commodityId} AND warehouse_id = #{warehouseId}
+    </select>
+    <select id="quotedBalance" resultType="com.example.stock.InventoryModels$Balance">
+        SELECT COALESCE(s.quantity, 0) AS quantity,
+               COALESCE(s.unit_price, CAST(0 AS DECIMAL(24, 6))) AS unit_price,
+               COALESCE(s.amount, CAST(0 AS DECIMAL(20, 2))) AS amount
+        FROM commodity c
+        CROSS JOIN warehouse w
+        LEFT JOIN stock s ON s.commodity_id = c.id AND s.warehouse_id = w.id
+        WHERE c.id = #{commodityId} AND w.id = #{warehouseId}
+          AND c.is_deleted = FALSE AND w.is_deleted = FALSE
+    </select>
+    <insert id="upsertBalance">
+        INSERT INTO stock (commodity_id, warehouse_id, quantity, unit_price, amount)
+        VALUES (#{pair.commodityId}, #{pair.warehouseId}, #{balance.quantity}, #{balance.unitPrice},
+                #{balance.amount}) AS incoming
+        ON DUPLICATE KEY UPDATE quantity = incoming.quantity, unit_price = incoming.unit_price,
+                                amount = incoming.amount
+    </insert>
+    <delete id="deleteBalance">
+        DELETE FROM stock WHERE commodity_id = #{commodityId} AND warehouse_id = #{warehouseId}
+    </delete>
+    <select id="nextMovementTime" resultType="java.time.LocalDateTime">
+        SELECT GREATEST(
+            UTC_TIMESTAMP(6),
+            COALESCE((SELECT TIMESTAMPADD(MICROSECOND, 1, MAX(created_at)) FROM stock_in
+                      WHERE commodity_id = #{commodityId} AND warehouse_id = #{warehouseId}), UTC_TIMESTAMP(6)),
+            COALESCE((SELECT TIMESTAMPADD(MICROSECOND, 1, MAX(created_at)) FROM stock_out
+                      WHERE commodity_id = #{commodityId} AND warehouse_id = #{warehouseId}), UTC_TIMESTAMP(6))
+        )
+    </select>
+    <select id="history" resultType="com.example.stock.InventoryModels$Movement">
+        SELECT id, FALSE AS outbound, quantity, unit_price, amount, created_at,
+               previous_quantity, previous_unit_price, previous_amount
+        FROM stock_in
+        WHERE commodity_id = #{commodityId} AND warehouse_id = #{warehouseId}
+        UNION ALL
+        SELECT id, TRUE AS outbound, quantity, unit_price, amount, created_at,
+               previous_quantity, previous_unit_price, previous_amount
+        FROM stock_out
+        WHERE commodity_id = #{commodityId} AND warehouse_id = #{warehouseId}
+        ORDER BY created_at, outbound, id
+    </select>
+
+    <sql id="documentColumns">
+        d.id, d.commodity_id, c.name AS commodity_name, d.warehouse_id, w.name AS warehouse_name,
+        d.quantity, d.unit_price, d.amount, d.created_at, d.previous_quantity, d.previous_unit_price, d.previous_amount
+    </sql>
+    <sql id="documentJoins">
+        JOIN commodity c ON c.id = d.commodity_id
+        JOIN warehouse w ON w.id = d.warehouse_id
+    </sql>
+    <sql id="insertDocumentColumns">
+        commodity_id, warehouse_id, quantity, unit_price, amount, created_at,
+        previous_quantity, previous_unit_price, previous_amount
+    </sql>
+    <sql id="snapshotValues">
+        previous_quantity = #{previous.quantity},
+        previous_unit_price = #{previous.unitPrice},
+        previous_amount = #{previous.amount}
+    </sql>
+    <select id="inbounds" resultType="com.example.stock.InventoryModels$Document">
+        SELECT <include refid="documentColumns"/>
+        FROM stock_in d <include refid="documentJoins"/>
+        ORDER BY d.created_at DESC, d.id DESC
+    </select>
+    <select id="inbound" resultType="com.example.stock.InventoryModels$Document">
+        SELECT <include refid="documentColumns"/>
+        FROM stock_in d <include refid="documentJoins"/>
+        WHERE d.id = #{id}
+    </select>
+    <select id="inboundPair" resultType="com.example.stock.InventoryModels$Pair">
+        SELECT commodity_id, warehouse_id FROM stock_in WHERE id = #{id}
+    </select>
+    <select id="lockInboundPair" resultType="com.example.stock.InventoryModels$Pair">
+        SELECT commodity_id, warehouse_id FROM stock_in WHERE id = #{id} FOR UPDATE
+    </select>
+    <insert id="insertInbound" useGeneratedKeys="true" keyProperty="generated.value">
+        INSERT INTO stock_in (<include refid="insertDocumentColumns"/>)
+        VALUES (#{pair.commodityId}, #{pair.warehouseId}, #{values.quantity}, #{values.unitPrice},
+                #{values.amount}, #{createdAt}, #{previous.quantity}, #{previous.unitPrice}, #{previous.amount})
+    </insert>
+    <update id="updateInbound">
+        UPDATE stock_in
+        SET commodity_id = #{pair.commodityId}, warehouse_id = #{pair.warehouseId},
+            quantity = #{values.quantity}, unit_price = #{values.unitPrice}, amount = #{values.amount}
+        WHERE id = #{id}
+    </update>
+    <update id="updateInboundSnapshot">
+        UPDATE stock_in SET <include refid="snapshotValues"/> WHERE id = #{id}
+    </update>
+    <delete id="deleteInbound">
+        DELETE FROM stock_in WHERE id = #{id}
+    </delete>
+
+    <select id="outbounds" resultType="com.example.stock.InventoryModels$Document">
+        SELECT <include refid="documentColumns"/>
+        FROM stock_out d <include refid="documentJoins"/>
+        ORDER BY d.created_at DESC, d.id DESC
+    </select>
+    <select id="outbound" resultType="com.example.stock.InventoryModels$Document">
+        SELECT <include refid="documentColumns"/>
+        FROM stock_out d <include refid="documentJoins"/>
+        WHERE d.id = #{id}
+    </select>
+    <insert id="insertOutbound" useGeneratedKeys="true" keyProperty="generated.value">
+        INSERT INTO stock_out (<include refid="insertDocumentColumns"/>)
+        VALUES (#{pair.commodityId}, #{pair.warehouseId}, #{quantity}, #{previous.unitPrice},
+                #{amount}, #{createdAt}, #{previous.quantity}, #{previous.unitPrice}, #{previous.amount})
+    </insert>
+    <update id="updateOutboundCost">
+        UPDATE stock_out
+        SET unit_price = #{previous.unitPrice}, amount = #{amount}, <include refid="snapshotValues"/>
+        WHERE id = #{id}
+    </update>
+</mapper>

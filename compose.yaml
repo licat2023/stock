@@ -1,0 +1,56 @@
+# Starts the local inventory application and persists MySQL data in a named volume.
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: stock
+      MYSQL_USER: stock_app
+      MYSQL_PASSWORD: ${STOCK_DB_PASSWORD:-stock-local-app}
+      MYSQL_ROOT_PASSWORD: ${STOCK_ROOT_PASSWORD:-stock-local-root}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - MYSQL_PWD="$$MYSQL_PASSWORD" mysql --protocol=TCP -h 127.0.0.1 -u "$$MYSQL_USER" "$$MYSQL_DATABASE" --execute="SELECT 1" >/dev/null
+      interval: 5s
+      timeout: 4s
+      retries: 24
+      start_period: 20s
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://db:3306/stock?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true
+      SPRING_DATASOURCE_USERNAME: stock_app
+      SPRING_DATASOURCE_PASSWORD: ${STOCK_DB_PASSWORD:-stock-local-app}
+    depends_on:
+      db:
+        condition: service_healthy
+        restart: true
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/actuator/health"]
+      interval: 5s
+      timeout: 4s
+      retries: 24
+      start_period: 15s
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+        restart: true
+    ports:
+      - "127.0.0.1:${STOCK_PORT:-18080}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 5s
+      timeout: 4s
+      retries: 10
+
+volumes:
+  mysql-data:

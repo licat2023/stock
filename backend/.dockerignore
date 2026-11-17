@@ -1,0 +1,2 @@
+# Keeps local build outputs out of the Docker build context.
+target/

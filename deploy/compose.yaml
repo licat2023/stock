@@ -1,0 +1,36 @@
+# Runs the inventory API on the shared server alongside its existing MySQL container.
+services:
+  backend:
+    image: ${STOCK_IMAGE:?set the stock backend image}
+    restart: unless-stopped
+    mem_limit: 320m
+    cpus: 0.75
+    environment:
+      JAVA_TOOL_OPTIONS: -Xms32m -Xmx112m -XX:+UseSerialGC -Xss384k -XX:MaxMetaspaceSize=112m -XX:ReservedCodeCacheSize=40m -XX:MaxDirectMemorySize=16m
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/stock_inventory?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true
+      SPRING_DATASOURCE_USERNAME: stock_web
+      SPRING_DATASOURCE_PASSWORD: ${STOCK_DB_PASSWORD:?set the stock database password}
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "4"
+      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "1"
+      SERVER_TOMCAT_THREADS_MAX: "24"
+      SERVER_TOMCAT_THREADS_MIN_SPARE: "2"
+    ports:
+      - "127.0.0.1:18083:8080"
+    networks:
+      - panel
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/actuator/health"]
+      interval: 10s
+      timeout: 4s
+      retries: 15
+      start_period: 25s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  panel:
+    external: true
+    name: 1panel-network

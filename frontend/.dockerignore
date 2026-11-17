@@ -1,0 +1,5 @@
+# Keep host dependencies and build output out of the Docker context.
+node_modules
+dist
+.env*
+*.log

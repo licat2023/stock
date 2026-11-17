@@ -1,0 +1,26 @@
+# Configures the API's database initialization, mappings and health endpoint.
+spring:
+  application:
+    name: stock-backend
+  sql:
+    init:
+      mode: always
+  jackson:
+    deserialization:
+      accept-float-as-int: false
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    arg-name-based-constructor-auto-mapping: true
+    local-cache-scope: statement
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-components: always
